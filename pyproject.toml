@@ -1,0 +1,14 @@
+[tool.poetry]
+name = "wiggle"
+version = "0.1.0"
+description = "A cli for creating wiggly lines"
+authors = ["WizzyGeek"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.scripts]
+wiggle = "wiggle.__main__:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
