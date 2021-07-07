@@ -1,13 +1,13 @@
 from sys import argv, exit
 from typing import Any, Dict, List, Literal, Union
+from itertools import chain
 
-from wiggle import Wiggler
+from wiggle import Wiggler, __version__
 
-class InvalidFlag(Exception):
-    pass
+class InvalidFlag(Exception): pass
 
 def invalid(_):
-    raise InvalidFlag
+    raise InvalidFlag(_)
 
 help_str = """
 Wiggle
@@ -16,10 +16,18 @@ A cli to create wiggly lines
 
 Usage
 ====+=============
-    | wiggle <text> [wiggle|shm] [-I|--iterations, <value = infinity (integer)>] [-H|--height, <value = 40 (integer)>] [-W|--width, <value = 15 (integer)>] [-d|--delay, <value = 16 (float)>]]
+    | wiggle <text> [wiggle|shm] [-I|--iterations, <value = infinity (integer)>]
+    |               [-H|--height, <value = 40 (integer)>] [-W|--width, <value = 15 (integer)>]
+    |               [-d|--delay, <value = 16 (float)>]]
 ====+=============
-    | wiggle <text> [wiggle|shm] [-I|--iterations, <value = infinity (integer)>] [height = 40 (integer)] [width = 15 (integer)] [delay = 16.0 (float)]]
+    | wiggle <text> [wiggle|shm] [-I|--iterations, <value = infinity (integer)>]
+    |               [height = 40 (integer)] [width = 15 (integer)] [delay = 16.0 (float)]]
 ====+=============
+    | wiggle [--help|-h]
+====+=============
+    | -h | --help
+    |     Shows this message
+----+----
     | text
     |     The text that will be wiggled.
 ----+----
@@ -29,101 +37,97 @@ Usage
     | -I|--iterations
     |     How many times to update. By default infinity.
 ----+----
-    | -H | --height
+    | -H | --height, height
     |     The height of the wiggle in muber of lines. By default 40
 ----+----
-    | -W | --width
+    | -W | --width, width
     |     The width of the wiggle. The actual width is twice this number. By default 15.
 ----+----
-    | -d | --delay
+    | -d | --delay, delay
     |     The delay between updates. By default 16.
 ====+=============
 """
 
 def main(argv: List[str] = argv) -> int:
+    help_ptr = "\nSee " + argv[0] + " --help for help"
+
+    if "--help" in argv[1:] or "-h" in argv[1:] or len(argv) == 1:
+        print(help_str)
+        return 0
+
     convertors = Wiggler.__init__.__annotations__
     convertors["iterations"] = int
 
     flags = {j: i for i, j in zip(convertors.keys(), ("H", "W", "d"))}
     flags["I"] = "iterations"
-    bool_flags = []
     method_flags = [("iterations", -1, "itr")]
 
-    config = {}
+    config = {
+        "wiggle": True,
+    }
     method_args = {}
     args = {}
-    by_pos = []
-    by_pos.append((0, argv[1]))
+    rest = argv[2:]
 
-    current_flag = None
-    for idx, i in enumerate(argv[1:]):
-        if i.startswith("--"):
-            d = i[2:]
-            bool_val = True
-            if d[4:] in bool_flags:
-                d = d[4:]
-                bool_val = False
-            if d in bool_flags:
-                config[d] = bool_val
-            current_flag = d
-        elif i.startswith("-"):
-            d = i[1:]
-            k = flags.get(d)
-            if k:
-                current_flag = k
-            else:
-                current_flag = d
-        elif current_flag is not None:
-            try:
-                val = convertors.get(current_flag, invalid)(i)
-            except (TypeError, ValueError):
-                print("Invalid value", i, "for flag", current_flag, "expected a(n)", convertors.get(d))
-                return 1
-            except InvalidFlag:
-                print(
-                    "Unexpected flag '", current_flag, "' valid flags are:\n\t",
-                    "\n\t".join("-" + i for i in flags), "\n\t", "\n\t".join("--" + i for i in flags.values)
-                )
-                return 1
-            else:
-                args[current_flag] = val
-            current_flag = None
-        else:
-            if i in ["wiggle", "shm"]:
-                continue
-            if idx != 0:
-                by_pos.append((idx, i))
-    else:
-        config["wiggle"] = True
-        if "shm" in argv:
+    if rest:
+        remain = rest.copy()
+
+        if "wiggle" in remain:
+            remain.remove("wiggle")
+        elif "shm" in remain:
             config["wiggle"] = False
+            remain.remove("shm")
 
-        if len(by_pos) == 0:
-            print("Missing required poitional argument 'text'")
-            return 1
-
-        if len(by_pos) > 1:
-            if by_pos[1][0] <= 3:
-                diff = 0
-                f_args = {}
-                last_idx =  by_pos[0][0]
-                for i, j, k, l in map(lambda x: (x[0][0], x[0][1], x[1][0], x[1][1]), zip(by_pos[1:], convertors.items())):
-                    if diff > 1:
-                        break
-                    f_args[k] = l(j)
-                    diff = i - last_idx
-                    last_idx = i
+        for i, j in map(lambda x: (("-" * ((len(x) > 1) + 1)) + x, flags.get(x, x)), chain(flags.values(), flags.keys())):
+            if len(remain) < 2:
+                break
+            if i in remain:
+                try:
+                    f_arg = argv[argv.index(i) + 1]
+                    args[j] = convertors.get(j, invalid)(f_arg)
+                except IndexError:
+                    print("Missing value for flag", i, help_ptr)
+                    return 1
+                except InvalidFlag:
+                    print("Something is wrong with wiggle", __version__, "\nUpdate/Restore to the latest version if available.")
+                    return 1
+                except (TypeError, ValueError):
+                    print("Invalid value", f_arg, "for flag", i, "expected a(n)", convertors.get(j), help_ptr)
+                    return 1
+                except Exception as e:
+                    print("Something went wrong!")
+                    return e
                 else:
-                    args.update(f_args)
+                    remain.pop(remain.index(i) + 1)
+                    remain.remove(i)
 
         for i, j, k in method_flags:
             method_args[k] = args.pop(i, j)
+
+        if remain:
+            if not args:
+                i = list(flags.values())[:3]
+                for val, conv, key in zip(remain, convertors.values(), i):
+                    try:
+                        args[key] = conv(val)
+                    except (TypeError, ValueError):
+                        print(help_ptr)
+                        return 1
+                    except Exception as e:
+                        print("Something went wrong!")
+                        return e
+            else:
+                print("[WARNING] Received undeterminable extra positional args: ", ", ".join(args))
+                try:
+                    input("(Press any key to continue)")
+                except KeyboardInterrupt:
+                    return 0
 
         wiggly = Wiggler(**{i: j for i, j in args.items() if i in convertors.keys()})
         method = wiggly.wiggle if config["wiggle"] else wiggly.shm
 
         try:
-            method(by_pos[0][1], **method_args)
+            method(argv[1], **method_args)
         except Exception as err:
             return err
         except KeyboardInterrupt:
